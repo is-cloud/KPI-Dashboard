@@ -1,0 +1,354 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Team KPI Dashboard</title>
+<style>
+  :root {
+    --navy: #1a2744;
+    --blue: #2f6fed;
+    --green: #3fa34d;
+    --green-bg: #eaf6ec;
+    --red: #d64545;
+    --red-bg: #fbeaea;
+    --amber: #d98e1c;
+    --amber-bg: #fdf3e2;
+    --border: #e4e6ec;
+    --text: #1f2430;
+    --text-secondary: #6b7280;
+    --surface: #ffffff;
+    --page-bg: #f5f6f8;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+    background: var(--page-bg);
+    color: var(--text);
+    padding: 24px;
+  }
+  .wrap { max-width: 1100px; margin: 0 auto; }
+  .header-bar {
+    background: var(--navy);
+    color: #fff;
+    padding: 16px 20px;
+    border-radius: 12px;
+    font-size: 18px;
+    font-weight: 600;
+    margin-bottom: 20px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .status {
+    font-size: 12px;
+    font-weight: 400;
+    opacity: 0.8;
+  }
+  .status.live { color: #9be79e; }
+  .status.error { color: #f3a1a1; }
+
+  .kpi-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 14px;
+    margin-bottom: 20px;
+  }
+  .kpi-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 16px 18px;
+  }
+  .kpi-card .label {
+    font-size: 12px;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    margin-bottom: 6px;
+  }
+  .kpi-card .value {
+    font-size: 26px;
+    font-weight: 600;
+  }
+  .kpi-card .target {
+    font-size: 12px;
+    color: var(--text-secondary);
+    margin-top: 4px;
+  }
+
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 18px 20px;
+    margin-bottom: 20px;
+  }
+  .card h3 {
+    font-size: 14px;
+    font-weight: 600;
+    margin: 0 0 12px;
+    color: var(--text);
+  }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+  }
+  th {
+    text-align: right;
+    font-weight: 500;
+    color: var(--text-secondary);
+    padding: 8px 6px;
+    border-bottom: 1px solid var(--border);
+  }
+  th:first-child, td:first-child { text-align: left; }
+  td {
+    padding: 8px 6px;
+    text-align: right;
+    border-bottom: 1px solid var(--border);
+  }
+  tr:last-child td { border-bottom: none; }
+  .score-good { color: var(--green); font-weight: 600; }
+  .score-warn { color: var(--amber); font-weight: 600; }
+  .score-bad { color: var(--red); font-weight: 600; }
+
+  .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+  @media (max-width: 640px) { .two-col { grid-template-columns: 1fr; } }
+
+  .config-note {
+    background: var(--amber-bg);
+    border: 1px solid #f0d9a8;
+    color: #7a5510;
+    font-size: 13px;
+    padding: 12px 16px;
+    border-radius: 10px;
+    margin-bottom: 20px;
+  }
+  .config-note code {
+    background: #fff;
+    padding: 1px 5px;
+    border-radius: 4px;
+    font-size: 12px;
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="header-bar">
+    KPI Dashboard
+    <span class="status" id="status">Loading live data…</span>
+  </div>
+
+  <div class="config-note" id="configNote">
+    This is running on sample data. To connect it to your sheet, open the CSV_URL constant near the
+    bottom of this file and paste in your published-CSV link (e.g. from a clean "Data" tab in your
+    spreadsheet), then reload this file in a browser (not from inside a chat preview — publish and
+    open it directly, since Sheets fetches only work outside a sandboxed preview).
+  </div>
+
+  <div class="kpi-grid" id="kpiGrid"></div>
+
+  <div class="card">
+    <h3>Performance by shift</h3>
+    <table id="shiftTable"><thead></thead><tbody></tbody></table>
+  </div>
+
+  <div class="card">
+    <h3>Editor performance</h3>
+    <table id="editorTable"><thead></thead><tbody></tbody></table>
+  </div>
+
+  <div class="two-col">
+    <div class="card">
+      <h3>Top five</h3>
+      <table id="topTable"><tbody></tbody></table>
+    </div>
+    <div class="card">
+      <h3>Last five</h3>
+      <table id="lastTable"><tbody></tbody></table>
+    </div>
+  </div>
+
+</div>
+
+<script>
+// ---- 1. POINT THIS AT YOUR PUBLISHED CSV TAB ----
+// Example format:
+// const CSV_URL = "https://docs.google.com/spreadsheets/d/e/YOUR-ID/pub?gid=YOUR-GID&single=true&output=csv";
+const CSV_URL = null; // set to your CSV link to go live
+
+// ---- 2. Fallback sample data (from your current dashboard) ----
+const SAMPLE = {
+  kpis: [
+    { label: "Accuracy", value: "99.85%", target: "Target: 97.00%" },
+    { label: "MTC %", value: "98.09%", target: "Target: 95.00%" },
+    { label: "MTC average (days)", value: "1.26", target: "Target: 5.00 max" },
+    { label: "Markers coverage", value: "99.91%", target: "Target: 99.00%" }
+  ],
+  shifts: [
+    { shift: "Morning", accuracy: "99.98%", mtc: "98.33%", coverage: "99.99%", overall: "98.93%" },
+    { shift: "Night", accuracy: "99.74%", mtc: "98.23%", coverage: "99.75%", overall: "98.71%" },
+    { shift: "Evening", accuracy: "99.80%", mtc: "97.73%", coverage: "99.95%", overall: "98.52%" }
+  ],
+  editors: [
+    { name: "Kyle Batungbacal", accuracy: "99.96%", mtc: "100.00%", coverage: "100.0%", mtcAvg: "0.69", overall: "99.64%" },
+    { name: "Minhal Naveed", accuracy: "100.00%", mtc: "99.60%", coverage: "100.0%", mtcAvg: "1.0", overall: "99.40%" },
+    { name: "Azhar Arshad", accuracy: "100.00%", mtc: "99.48%", coverage: "100.0%", mtcAvg: "1.1", overall: "99.29%" },
+    { name: "Kent Lodovice", accuracy: "100.00%", mtc: "99.26%", coverage: "100.0%", mtcAvg: "1.1", overall: "99.22%" },
+    { name: "Jean Zurich Plucena", accuracy: "100.00%", mtc: "98.60%", coverage: "100.0%", mtcAvg: "1.0", overall: "99.06%" },
+    { name: "Waseem Masood", accuracy: "99.95%", mtc: "99.20%", coverage: "100.0%", mtcAvg: "1.4", overall: "99.02%" },
+    { name: "Maida Azam", accuracy: "99.89%", mtc: "98.40%", coverage: "99.9%", mtcAvg: "0.9", overall: "99.01%" },
+    { name: "Babar Aslam", accuracy: "100.00%", mtc: "98.56%", coverage: "100.0%", mtcAvg: "1.1", overall: "99.00%" },
+    { name: "Syeda Fatima", accuracy: "99.88%", mtc: "98.77%", coverage: "99.9%", mtcAvg: "1.2", overall: "98.98%" },
+    { name: "Fajar Razzaq", accuracy: "99.60%", mtc: "98.64%", coverage: "99.8%", mtcAvg: "1.3", overall: "98.77%" },
+    { name: "Carlo Soledad", accuracy: "99.89%", mtc: "98.09%", coverage: "99.9%", mtcAvg: "1.4", overall: "98.70%" },
+    { name: "Edward Joseph Vicarme", accuracy: "99.81%", mtc: "98.31%", coverage: "99.9%", mtcAvg: "1.5", overall: "98.68%" },
+    { name: "Asad Ali", accuracy: "99.66%", mtc: "98.35%", coverage: "99.7%", mtcAvg: "1.3", overall: "98.65%" },
+    { name: "Jann Hale Pangani", accuracy: "100.00%", mtc: "98.95%", coverage: "100.0%", mtcAvg: "1.3", overall: "98.46%" },
+    { name: "Wasif", accuracy: "99.54%", mtc: "97.04%", coverage: "99.9%", mtcAvg: "1.5", overall: "98.17%" },
+    { name: "Glenard Santiago", accuracy: "99.67%", mtc: "96.71%", coverage: "99.7%", mtcAvg: "1.5", overall: "98.04%" },
+    { name: "Lyka Vigo", accuracy: "99.30%", mtc: "96.57%", coverage: "99.3%", mtcAvg: "1.3", overall: "97.88%" },
+    { name: "Adrian Manriza", accuracy: "99.30%", mtc: "96.57%", coverage: "99.3%", mtcAvg: "1.3", overall: "97.88%" }
+  ],
+  top: [
+    { name: "Kyle Batungbacal", score: "99.64%" },
+    { name: "Minhal Naveed", score: "99.40%" },
+    { name: "Azhar Arshad", score: "99.29%" },
+    { name: "Kent Lodovice", score: "99.22%" },
+    { name: "Jean Zurich Plucena", score: "99.06%" }
+  ],
+  last: [
+    { name: "Adrian Manriza", score: "97.88%" },
+    { name: "Lyka Vigo", score: "98.04%" },
+    { name: "Glenard Santiago", score: "98.17%" },
+    { name: "Wasif", score: "98.17%" },
+    { name: "Jann Hale Pangani", score: "98.46%" }
+  ]
+};
+
+function scoreClass(pctStr) {
+  const n = parseFloat(pctStr);
+  if (isNaN(n)) return "";
+  if (n >= 99) return "score-good";
+  if (n >= 98) return "score-warn";
+  return "score-bad";
+}
+
+function renderKPIs(kpis) {
+  const grid = document.getElementById("kpiGrid");
+  grid.innerHTML = kpis.map(k => `
+    <div class="kpi-card">
+      <div class="label">${k.label}</div>
+      <div class="value">${k.value}</div>
+      <div class="target">${k.target || ""}</div>
+    </div>`).join("");
+}
+
+function renderShifts(shifts) {
+  const t = document.getElementById("shiftTable");
+  t.querySelector("thead").innerHTML =
+    `<tr><th>Shift</th><th>Accuracy</th><th>MTC %</th><th>Coverage</th><th>Overall</th></tr>`;
+  t.querySelector("tbody").innerHTML = shifts.map(s => `
+    <tr>
+      <td>${s.shift}</td><td>${s.accuracy}</td><td>${s.mtc}</td><td>${s.coverage}</td>
+      <td class="${scoreClass(s.overall)}">${s.overall}</td>
+    </tr>`).join("");
+}
+
+function renderEditors(editors) {
+  const t = document.getElementById("editorTable");
+  t.querySelector("thead").innerHTML =
+    `<tr><th>Editor</th><th>Accuracy</th><th>MTC %</th><th>Coverage</th><th>MTC avg</th><th>Overall</th></tr>`;
+  t.querySelector("tbody").innerHTML = editors.map(e => `
+    <tr>
+      <td>${e.name}</td><td>${e.accuracy}</td><td>${e.mtc}</td><td>${e.coverage}</td><td>${e.mtcAvg}</td>
+      <td class="${scoreClass(e.overall)}">${e.overall}</td>
+    </tr>`).join("");
+}
+
+function renderRank(id, rows) {
+  const t = document.getElementById(id);
+  t.querySelector("tbody").innerHTML = rows.map(r => `
+    <tr><td>${r.name}</td><td class="${scoreClass(r.score)}">${r.score}</td></tr>`).join("");
+}
+
+function renderAll(data) {
+  renderKPIs(data.kpis);
+  renderShifts(data.shifts);
+  renderEditors(data.editors);
+  renderRank("topTable", data.top);
+  renderRank("lastTable", data.last);
+}
+
+// Minimal CSV parser (handles quoted fields with commas)
+function parseCSV(text) {
+  const rows = [];
+  let row = [], field = "", inQuotes = false;
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (inQuotes) {
+      if (c === '"' && text[i + 1] === '"') { field += '"'; i++; }
+      else if (c === '"') { inQuotes = false; }
+      else { field += c; }
+    } else {
+      if (c === '"') inQuotes = true;
+      else if (c === ',') { row.push(field); field = ""; }
+      else if (c === '\n') { row.push(field); rows.push(row); row = []; field = ""; }
+      else if (c === '\r') { /* skip */ }
+      else { field += c; }
+    }
+  }
+  if (field.length || row.length) { row.push(field); rows.push(row); }
+  return rows.filter(r => r.some(c => c.trim() !== ""));
+}
+
+// Expects your "Data" tab columns in this order:
+// Editor, Accuracy, MTC%, Coverage, MTC Average, Overall Score
+function editorsFromCSV(rows) {
+  const [header, ...body] = rows;
+  return body.map(r => ({
+    name: r[0], accuracy: r[1], mtc: r[2], coverage: r[3], mtcAvg: r[4], overall: r[5]
+  }));
+}
+
+async function loadLive() {
+  const statusEl = document.getElementById("status");
+  const noteEl = document.getElementById("configNote");
+  if (!CSV_URL) {
+    statusEl.textContent = "Sample data (not connected)";
+    noteEl.style.display = "block";
+    renderAll(SAMPLE);
+    return;
+  }
+  try {
+    statusEl.textContent = "Loading live data…";
+    const res = await fetch(CSV_URL);
+    if (!res.ok) throw new Error("Fetch failed: " + res.status);
+    const text = await res.text();
+    const rows = parseCSV(text);
+    const editors = editorsFromCSV(rows);
+    const data = { ...SAMPLE, editors };
+    // Recompute top/last five from live editors, sorted by overall score
+    const sorted = [...editors].sort((a, b) => parseFloat(b.overall) - parseFloat(a.overall));
+    data.top = sorted.slice(0, 5).map(e => ({ name: e.name, score: e.overall }));
+    data.last = sorted.slice(-5).map(e => ({ name: e.name, score: e.overall }));
+    renderAll(data);
+    statusEl.textContent = "Live — updated " + new Date().toLocaleTimeString();
+    statusEl.className = "status live";
+    noteEl.style.display = "none";
+  } catch (err) {
+    statusEl.textContent = "Couldn't load live data — showing sample";
+    statusEl.className = "status error";
+    noteEl.style.display = "block";
+    renderAll(SAMPLE);
+    console.error(err);
+  }
+}
+
+loadLive();
+</script>
+</body>
+</html>
